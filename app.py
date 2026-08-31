@@ -11,10 +11,14 @@ st.title("🎙️ 초고속 AI 녹취 변환기 (Groq Whisper)")
 st.write("1시간 이상의 대용량 파일도 10분 단위로 자동 분할하여 빠르게 텍스트로 변환합니다.")
 
 # API Key 입력란
-api_key = st.text_input("Groq API 키를 입력하세요", type="password")
-
-if not api_key:
-    st.info("API 키가 필요합니다. [Groq Console](https://console.groq.com/keys)에서 무료로 발급받으세요.")
+api_key = ""
+if "GROQ_API_KEY" in st.secrets:
+    api_key = st.secrets["GROQ_API_KEY"]
+    st.success("✅ 시스템에 저장된 API 키를 자동으로 불러왔습니다.")
+else:
+    api_key = st.text_input("Groq API 키를 입력하세요", type="password")
+    if not api_key:
+        st.info("API 키가 필요합니다.")
 
 # 파일 업로더
 uploaded_file = st.file_uploader("음성 파일을 업로드하세요 (mp3, m4a, wav 등)", type=["mp3", "m4a", "wav", "flac", "ogg"])
