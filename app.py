@@ -187,7 +187,7 @@ with st.sidebar:
             selected_subject_id = st.selectbox("현재 선택된 과목", list(subjects.keys()), format_func=lambda x: subjects[x])
             st.session_state.current_subject_id = selected_subject_id
             
-            # 🚨 과목 삭제 버튼 (실수 방지를 위해 숨김 처리)
+            # 🚨 과목 삭제 버튼
             with st.expander("🗑️ 현재 과목 삭제"):
                 st.write("해당 과목 폴더를 삭제하시겠습니까?")
                 if st.button("과목 영구 삭제", type="primary", use_container_width=True):
@@ -202,12 +202,22 @@ with st.sidebar:
             # --- 신규 녹취 업로드 영역 ---
             st.markdown("<br><h3 style='font-size: 16px; font-weight: 700;'>🎙️ 새 강의 업로드</h3>", unsafe_allow_html=True)
             lecture_title = st.text_input("강의 제목", placeholder="예: 3주차 심혈관계")
+            
+            # 🔥 복구된 전공(프롬프트) 선택 옵션!
+            domain_options = {
+                "일반 (기본)": "다음은 한국어 음성 기록입니다. 정확하게 받아쓰기 해주세요.",
+                "간호학 (Nursing)": "간호학 전공 강의입니다. 의학, 질환명, 약물명 전문 용어를 정확하게 받아쓰기 해주세요.",
+                "기독교 (Theology)": "기독교 신학 강의입니다. 성경 인물, 신학 용어, 교리를 정확하게 받아쓰기 해주세요."
+            }
+            domain_choice = st.selectbox("전공 도메인 (음성 인식 최적화)", list(domain_options.keys()))
+            system_prompt_stt = domain_options[domain_choice]
+            
             uploaded_file = st.file_uploader("오디오 파일 선택", type=["mp3", "m4a", "wav"], label_visibility="collapsed")
             
             if uploaded_file and lecture_title and api_key:
                 if st.button("분석 시작", type="primary", use_container_width=True):
                     with st.spinner("AI가 음성을 듣고 있습니다..."):
-                        result_text = process_audio(uploaded_file, api_key, "다음은 전문 강의 음성 기록입니다. 최대한 문맥에 맞게 정확하게 받아쓰기 해주세요.")
+                        result_text = process_audio(uploaded_file, api_key, system_prompt_stt)
                         if result_text:
                             new_doc = db.collection('lectures').add({
                                 'subject_id': selected_subject_id,
@@ -275,7 +285,6 @@ with col_btn_1:
         st.rerun()
 
 with col_btn_2:
-    # 🚨 현재 강의 기록 삭제 버튼 추가
     if st.session_state.doc_id:
         if st.button("🗑️ 현재 강의 삭제", use_container_width=True):
             db.collection('lectures').document(st.session_state.doc_id).delete()
