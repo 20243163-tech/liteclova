@@ -4,150 +4,101 @@ from pydub import AudioSegment
 import os
 import tempfile
 import json
+import urllib.request
+from fpdf import FPDF
 
-# 페이지 기본 설정 (와이드 모드, 사이드바 활용)
+# 페이지 기본 설정
 st.set_page_config(page_title="강의 노트 AI", layout="wide", initial_sidebar_state="expanded")
 
-# --- 커스텀 CSS (카드 디자인 입체감 극대화) ---
+# --- 커스텀 CSS ---
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    
-    html, body, [class*="css"] {
-        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
-    }
-    
-    /* 🚨 배경색 강제 지정 (카드와 확실히 대비되도록 연회색 적용) */
-    .stApp, .main {
-        background-color: #f1f5f9 !important;
-    }
-
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e5e7eb;
-    }
-    
-    .univ-title {
-        font-size: 32px;
-        font-weight: 800;
-        color: #111827;
-        margin-bottom: 8px;
-        letter-spacing: -0.5px;
-    }
-    .univ-subtitle {
-        font-size: 16px;
-        color: #6b7280;
-        margin-bottom: 40px;
-    }
-    
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 24px;
-        border-bottom: 2px solid #e5e7eb;
-    }
-    .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        font-size: 16px;
-        font-weight: 600;
-        color: #6b7280;
-        border: none;
-    }
-    .stTabs [aria-selected="true"] {
-        color: #6366f1 !important;
-        border-bottom: 3px solid #6366f1 !important;
-    }
-
-    /* 🚨 요약 카드 뚜렷하게 (흰색 배경 + 입체감 있는 그림자) */
-    .summary-card {
-        background-color: #ffffff !important;
-        border-radius: 16px;
-        padding: 32px;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        margin-bottom: 30px;
-        border: 1px solid #e2e8f0;
-    }
-    
-    .card-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: #111827;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .card-title::before {
-        content: '';
-        display: inline-block;
-        width: 4px;
-        height: 18px;
-        background-color: #6366f1;
-        border-radius: 2px;
-    }
-
-    .card-text {
-        font-size: 15px;
-        color: #374151;
-        line-height: 1.7;
-    }
-
-    .keyword-badge {
-        background: #eef2ff;
-        color: #4f46e5;
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-weight: 700;
-        font-size: 15px;
-        display: inline-block;
-        margin-bottom: 10px;
-    }
-    
-    .detail-list {
-        list-style-type: none;
-        padding-left: 0;
-        margin: 0;
-    }
-    .detail-list li {
-        position: relative;
-        padding-left: 16px;
-        margin-bottom: 8px;
-        font-size: 15px;
-        color: #4b5563;
-        line-height: 1.6;
-    }
-    .detail-list li::before {
-        content: '•';
-        position: absolute;
-        left: 0;
-        color: #9ca3af;
-    }
-
-    .highlight-box {
-        background: #fdf2f8;
-        border: 1px solid #fce7f3;
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 12px;
-        color: #be185d;
-        font-weight: 600;
-        font-size: 15px;
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-    }
+    html, body, [class*="css"] { font-family: 'Pretendard', sans-serif !important; }
+    .stApp, .main { background-color: #f1f5f9 !important; }
+    [data-testid="stSidebar"] { background-color: #ffffff; border-right: 1px solid #e5e7eb; }
+    .univ-title { font-size: 32px; font-weight: 800; color: #111827; margin-bottom: 8px; letter-spacing: -0.5px; }
+    .univ-subtitle { font-size: 16px; color: #6b7280; margin-bottom: 40px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 24px; border-bottom: 2px solid #e5e7eb; }
+    .stTabs [data-baseweb="tab"] { height: 50px; font-size: 16px; font-weight: 600; color: #6b7280; border: none; }
+    .stTabs [aria-selected="true"] { color: #6366f1 !important; border-bottom: 3px solid #6366f1 !important; }
+    .summary-card { background-color: #ffffff !important; border-radius: 16px; padding: 32px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); margin-bottom: 30px; border: 1px solid #e2e8f0; }
+    .card-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .card-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background-color: #6366f1; border-radius: 2px; }
+    .card-text { font-size: 15px; color: #374151; line-height: 1.7; }
+    .keyword-badge { background: #eef2ff; color: #4f46e5; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 15px; display: inline-block; margin-bottom: 10px; }
+    .detail-list { list-style-type: none; padding-left: 0; margin: 0; }
+    .detail-list li { position: relative; padding-left: 16px; margin-bottom: 8px; font-size: 15px; color: #4b5563; line-height: 1.6; }
+    .detail-list li::before { content: '•'; position: absolute; left: 0; color: #9ca3af; }
+    .highlight-box { background: #fdf2f8; border: 1px solid #fce7f3; border-radius: 12px; padding: 16px 20px; margin-bottom: 12px; color: #be185d; font-weight: 600; font-size: 15px; display: flex; align-items: flex-start; gap: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
 # Session state 초기화
-if "transcript" not in st.session_state:
-    st.session_state.transcript = ""
-if "summary_data" not in st.session_state:
-    st.session_state.summary_data = None
+if "transcript" not in st.session_state: st.session_state.transcript = ""
+if "summary_data" not in st.session_state: st.session_state.summary_data = None
 
-# API Key 로직
-api_key = ""
-if "GROQ_API_KEY" in st.secrets:
-    api_key = st.secrets["GROQ_API_KEY"]
+api_key = st.secrets["GROQ_API_KEY"] if "GROQ_API_KEY" in st.secrets else ""
 
+# --- 한글 폰트 다운로드 및 PDF 생성 함수 ---
+@st.cache_resource
+def load_font():
+    font_path = "NanumGothic.ttf"
+    if not os.path.exists(font_path):
+        url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+        urllib.request.urlretrieve(url, font_path)
+    return font_path
+
+def create_pdf(data):
+    font_path = load_font()
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.add_font('Nanum', '', font_path, uni=True)
+    
+    # 제목
+    pdf.set_font('Nanum', '', 20)
+    pdf.cell(200, 15, txt="AI 강의 요약 노트", ln=True, align='C')
+    pdf.ln(10)
+    
+    # Executive Summary
+    if data.get("executive_summary"):
+        pdf.set_font('Nanum', '', 14)
+        pdf.set_text_color(99, 102, 241) # 보라색 포인트
+        pdf.cell(200, 10, txt="[ Executive Summary ]", ln=True)
+        pdf.set_font('Nanum', '', 11)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(0, 8, txt=data.get("executive_summary"))
+        pdf.ln(10)
+        
+    # 코넬 노트
+    notes = data.get("cornell_notes", [])
+    if notes:
+        pdf.set_font('Nanum', '', 14)
+        pdf.set_text_color(99, 102, 241)
+        pdf.cell(200, 10, txt="[ 상세 필기 노트 ]", ln=True)
+        pdf.set_text_color(0, 0, 0)
+        for note in notes:
+            pdf.set_font('Nanum', '', 12)
+            pdf.multi_cell(0, 8, txt=f"▶ {note.get('keyword', '')}")
+            pdf.set_font('Nanum', '', 10)
+            for detail in note.get("details", []):
+                pdf.multi_cell(0, 7, txt=f"    - {detail}")
+            pdf.ln(5)
+            
+    # Takeaways
+    takeaways = data.get("key_takeaways", [])
+    if takeaways:
+        pdf.set_font('Nanum', '', 14)
+        pdf.set_text_color(190, 24, 93) # 붉은색 포인트
+        pdf.cell(200, 10, txt="[ 주요 강조 포인트 ]", ln=True)
+        pdf.set_font('Nanum', '', 11)
+        pdf.set_text_color(0, 0, 0)
+        for pt in takeaways:
+            pdf.multi_cell(0, 8, txt=f"💡 {pt}")
+            
+    return bytes(pdf.output())
+
+# 오디오 처리 함수
 def process_audio(file, api_key, prompt_text):
     client = Groq(api_key=api_key)
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.name)[1]) as temp_audio:
@@ -162,7 +113,6 @@ def process_audio(file, api_key, prompt_text):
     chunk_length_ms = 10 * 60 * 1000
     chunks = [audio[i:i + chunk_length_ms] for i in range(0, len(audio), chunk_length_ms)]
     total_chunks = len(chunks)
-    
     progress_bar = st.sidebar.progress(0)
     status_text = st.sidebar.empty()
     full_transcript = ""
@@ -189,11 +139,14 @@ def process_audio(file, api_key, prompt_text):
     os.remove(temp_audio_path)
     return full_transcript
 
+# ==========================================
 # 사이드바
+# ==========================================
 with st.sidebar:
-    st.markdown("<h2 style='font-size: 20px; font-weight: 800; color: #111827;'>⚙️ 프로젝트 설정</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='font-size: 20px; font-weight: 800; color: #111827;'>⚙️ 분석 설정</h2>", unsafe_allow_html=True)
     if not api_key:
         api_key = st.text_input("Groq API Key (필수)", type="password")
+    
     domain_options = {
         "일반 (기본)": "다음은 한국어 음성 기록입니다. 정확하게 받아쓰기 해주세요.",
         "간호학 (Nursing)": "간호학 전공 강의입니다. 의학, 질환명, 약물명 전문 용어를 정확하게 받아쓰기 해주세요.",
@@ -201,6 +154,7 @@ with st.sidebar:
     }
     domain_choice = st.selectbox("전공 도메인", list(domain_options.keys()))
     system_prompt_stt = domain_options[domain_choice]
+    
     st.markdown("<br>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader("새 오디오 업로드", type=["mp3", "m4a", "wav"])
     
@@ -212,12 +166,22 @@ with st.sidebar:
                     st.session_state.transcript = result_text
                     st.session_state.summary_data = None 
 
+# ==========================================
 # 메인 화면
-st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
-st.markdown("<div class='univ-subtitle'>업로드된 강의의 원본 스크립트를 확인하고 AI가 구조화한 핵심 노트를 학습하세요.</div>", unsafe_allow_html=True)
+# ==========================================
+col_title, col_btn = st.columns([8, 2])
+with col_title:
+    st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
+    st.markdown("<div class='univ-subtitle'>업로드된 강의의 원본 스크립트와 구조화된 핵심 노트를 확인하세요.</div>", unsafe_allow_html=True)
+with col_btn:
+    # 초기화(Reset) 버튼
+    if st.button("🔄 새 녹음 분석 (초기화)", use_container_width=True):
+        st.session_state.transcript = ""
+        st.session_state.summary_data = None
+        st.rerun()
 
 if not st.session_state.transcript:
-    st.info("👈 왼쪽 메뉴에서 강의 음성 파일을 업로드하고 분석을 시작해주세요.")
+    st.info("👈 왼쪽 사이드바에서 음성 파일을 업로드하고 분석을 시작해주세요.")
 else:
     tab1, tab2 = st.tabs(["📝 AI 요약 노트", "📜 원본 스크립트"])
     
@@ -225,7 +189,7 @@ else:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
         st.text_area("전사 텍스트", st.session_state.transcript, height=500, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
-        st.download_button("텍스트 파일 다운로드", data=st.session_state.transcript, file_name="script.txt", mime="text/plain")
+        st.download_button("원본 텍스트 다운로드", data=st.session_state.transcript, file_name="script.txt", mime="text/plain")
 
     with tab1:
         if not st.session_state.summary_data:
@@ -248,7 +212,7 @@ else:
   ],
   "key_takeaways": ["교수 강조 포인트 1", "포인트 2"]
 }"""
-                with st.spinner("AI 튜터가 강의 노트를 분석하고 구조화하고 있습니다..."):
+                with st.spinner("AI 튜터가 노트를 분석하고 구조화하고 있습니다..."):
                     try:
                         response = client.chat.completions.create(
                             model="openai/gpt-oss-120b", 
@@ -266,22 +230,20 @@ else:
         else:
             data = st.session_state.summary_data
             
-            # --- 다운로드 / 인쇄 안내 버튼부 ---
-            col_a, col_b = st.columns([8, 2])
-            with col_a:
-                st.info("💡 **PDF로 저장하는 꿀팁:** 키보드의 `Ctrl + P` (맥은 `Cmd + P`)를 눌러 'PDF로 저장'을 선택하시면 현재의 예쁜 디자인 그대로 저장됩니다!")
-            with col_b:
-                # 마크다운 텍스트 생성
-                md_text = f"# 강의 노트\n\n## 🎯 Executive Summary\n{data.get('executive_summary', '')}\n\n## 📚 상세 필기 노트\n"
-                for note in data.get("cornell_notes", []):
-                    md_text += f"\n### {note.get('keyword', '')}\n"
-                    for d in note.get("details", []):
-                        md_text += f"- {d}\n"
-                md_text += "\n## 🚨 주요 강조 포인트\n"
-                for pt in data.get("key_takeaways", []):
-                    md_text += f"- {pt}\n"
-                
-                st.download_button("📄 텍스트 복사본 다운로드", data=md_text, file_name="ai_notes.md", mime="text/markdown", use_container_width=True)
+            # --- PDF 진짜 다운로드 버튼 ---
+            col_pdf, col_space = st.columns([3, 7])
+            with col_pdf:
+                pdf_bytes = create_pdf(data)
+                st.download_button(
+                    label="📥 PDF로 다운로드",
+                    data=pdf_bytes,
+                    file_name="강의요약노트.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    use_container_width=True
+                )
+            
+            st.markdown("<br>", unsafe_allow_html=True)
 
             # 1. 전체 요약
             if data.get("executive_summary"):
@@ -292,7 +254,7 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # 2. 코넬 노트 
+            # 2. 코넬 노트
             notes = data.get("cornell_notes", [])
             if notes:
                 st.markdown("<div class='summary-card'><div class='card-title'>상세 필기 노트</div>", unsafe_allow_html=True)
