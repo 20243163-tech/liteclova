@@ -6,6 +6,9 @@ import tempfile
 import json
 import urllib.request
 from fpdf import FPDF
+import firebase_admin
+from firebase_admin import credentials, firestore
+from datetime import datetime
 
 # 페이지 기본 설정
 st.set_page_config(page_title="강의 노트 AI", layout="wide", initial_sidebar_state="expanded")
@@ -34,9 +37,30 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# Firebase 초기화
+# ==========================================
+@st.cache_resource
+def init_firebase():
+    if not firebase_admin._apps:
+        try:
+            # st.secrets에 저장된 JSON 텍스트를 딕셔너리로 변환
+            key_dict = json.loads(st.secrets["FIREBASE_KEY"])
+            cred = credentials.Certificate(key_dict)
+            firebase_admin.initialize_app(cred)
+        except Exception as e:
+            st.error(f"Firebase 연결 오류: {e}")
+            return None
+    return firestore.client()
+
+db = init_firebase()
+
 # Session state 초기화
 if "transcript" not in st.session_state: st.session_state.transcript = ""
 if "summary_data" not in st.session_state: st.session_state.summary_data = None
+if "current_lecture_title" not in st.session_state: st.session_state.current_lecture_title = ""
+if "current_subject_id" not in st.session_state: st.session_state.current_subject_id = ""
+if "doc_id" not in st.session_state: st.session_state.doc_id = None 
 
 api_key = st.secrets["GROQ_API_KEY"] if "GROQ_API_KEY" in st.secrets else ""
 
@@ -54,23 +78,19 @@ def create_pdf(data):
     pdf = FPDF()
     pdf.add_page()
     pdf.add_font('Nanum', '', font_path, uni=True)
-    
-    # 제목
     pdf.set_font('Nanum', '', 20)
     pdf.cell(200, 15, txt="AI 강의 요약 노트", ln=True, align='C')
     pdf.ln(10)
     
-    # Executive Summary
     if data.get("executive_summary"):
         pdf.set_font('Nanum', '', 14)
-        pdf.set_text_color(99, 102, 241) # 보라색 포인트
+        pdf.set_text_color(99, 102, 241)
         pdf.cell(200, 10, txt="[ Executive Summary ]", ln=True)
         pdf.set_font('Nanum', '', 11)
         pdf.set_text_color(0, 0, 0)
         pdf.multi_cell(0, 8, txt=data.get("executive_summary"))
         pdf.ln(10)
         
-    # 코넬 노트
     notes = data.get("cornell_notes", [])
     if notes:
         pdf.set_font('Nanum', '', 14)
@@ -85,11 +105,10 @@ def create_pdf(data):
                 pdf.multi_cell(0, 7, txt=f"    - {detail}")
             pdf.ln(5)
             
-    # Takeaways
     takeaways = data.get("key_takeaways", [])
     if takeaways:
         pdf.set_font('Nanum', '', 14)
-        pdf.set_text_color(190, 24, 93) # 붉은색 포인트
+        pdf.set_text_color(190, 24, 93)
         pdf.cell(200, 10, txt="[ 주요 강조 포인트 ]", ln=True)
         pdf.set_font('Nanum', '', 11)
         pdf.set_text_color(0, 0, 0)
@@ -140,50 +159,118 @@ def process_audio(file, api_key, prompt_text):
     return full_transcript
 
 # ==========================================
-# 사이드바
+# 사이드바 (Firebase 연동)
 # ==========================================
 with st.sidebar:
-    st.markdown("<h2 style='font-size: 20px; font-weight: 800; color: #111827;'>⚙️ 분석 설정</h2>", unsafe_allow_html=True)
-    if not api_key:
-        api_key = st.text_input("Groq API Key (필수)", type="password")
+    st.markdown("<h2 style='font-size: 20px; font-weight: 800; color: #111827;'>📂 나의 학습 폴더</h2>", unsafe_allow_html=True)
     
-    domain_options = {
-        "일반 (기본)": "다음은 한국어 음성 기록입니다. 정확하게 받아쓰기 해주세요.",
-        "간호학 (Nursing)": "간호학 전공 강의입니다. 의학, 질환명, 약물명 전문 용어를 정확하게 받아쓰기 해주세요.",
-        "기독교 (Theology)": "기독교 신학 강의입니다. 성경 인물, 신학 용어, 교리를 정확하게 받아쓰기 해주세요."
-    }
-    domain_choice = st.selectbox("전공 도메인", list(domain_options.keys()))
-    system_prompt_stt = domain_options[domain_choice]
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("새 오디오 업로드", type=["mp3", "m4a", "wav"])
-    
-    if uploaded_file and api_key:
-        if st.button("음성 텍스트 변환 시작", type="primary", use_container_width=True):
-            with st.spinner("AI가 음성을 듣고 있습니다..."):
-                result_text = process_audio(uploaded_file, api_key, system_prompt_stt)
-                if result_text:
-                    st.session_state.transcript = result_text
-                    st.session_state.summary_data = None 
+    if db is None:
+        st.error("데이터베이스가 연결되지 않았습니다.")
+    else:
+        # 과목 폴더 불러오기
+        subjects_ref = db.collection('subjects').order_by('created_at').get()
+        subjects = {doc.id: doc.to_dict().get('name', '이름 없음') for doc in subjects_ref}
+        
+        # 새 과목 만들기
+        with st.expander("➕ 새 과목 추가하기"):
+            new_subject_name = st.text_input("과목 이름 입력", placeholder="예: 간호학개론")
+            if st.button("추가", use_container_width=True) and new_subject_name:
+                db.collection('subjects').add({
+                    'name': new_subject_name,
+                    'created_at': firestore.SERVER_TIMESTAMP
+                })
+                st.rerun()
+
+        if not subjects:
+            st.info("먼저 새 과목(폴더)을 추가해주세요.")
+        else:
+            # 과목 선택
+            selected_subject_id = st.selectbox("현재 선택된 과목", list(subjects.keys()), format_func=lambda x: subjects[x])
+            st.session_state.current_subject_id = selected_subject_id
+            
+            # --- 신규 녹취 업로드 영역 ---
+            st.markdown("<br><h3 style='font-size: 16px; font-weight: 700;'>🎙️ 새 강의 업로드</h3>", unsafe_allow_html=True)
+            lecture_title = st.text_input("강의 제목", placeholder="예: 3주차 심혈관계")
+            uploaded_file = st.file_uploader("오디오 파일 선택", type=["mp3", "m4a", "wav"], label_visibility="collapsed")
+            
+            if uploaded_file and lecture_title and api_key:
+                if st.button("분석 시작", type="primary", use_container_width=True):
+                    with st.spinner("AI가 음성을 듣고 있습니다..."):
+                        result_text = process_audio(uploaded_file, api_key, "다음은 전문 강의 음성 기록입니다. 최대한 문맥에 맞게 정확하게 받아쓰기 해주세요.")
+                        if result_text:
+                            # DB에 저장!
+                            new_doc = db.collection('lectures').add({
+                                'subject_id': selected_subject_id,
+                                'title': lecture_title,
+                                'transcript': result_text,
+                                'summary_json': None,
+                                'created_at': firestore.SERVER_TIMESTAMP
+                            })
+                            st.session_state.transcript = result_text
+                            st.session_state.summary_data = None 
+                            st.session_state.current_lecture_title = lecture_title
+                            st.session_state.doc_id = new_doc[1].id
+                            st.rerun()
+            elif uploaded_file and not lecture_title:
+                st.warning("강의 제목을 입력해야 분석이 시작됩니다.")
+
+            st.divider()
+            
+            # --- 과거 기록 불러오기 영역 ---
+            st.markdown(f"<h3 style='font-size: 16px; font-weight: 700;'>📜 '{subjects[selected_subject_id]}' 과거 기록</h3>", unsafe_allow_html=True)
+            
+            lectures_ref = db.collection('lectures').where('subject_id', '==', selected_subject_id).get()
+            lectures_list = []
+            for doc in lectures_ref:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                created_at = data.get('created_at')
+                data['sort_time'] = created_at.timestamp() if created_at else 0
+                lectures_list.append(data)
+                
+            lectures_list.sort(key=lambda x: x['sort_time'], reverse=True)
+            
+            if not lectures_list:
+                st.write("아직 저장된 강의가 없습니다.")
+            else:
+                for lec in lectures_list:
+                    # 버튼을 누르면 과거 기록을 세션에 복원합니다
+                    if st.button(f"📄 {lec.get('title', '제목 없음')}", key=f"btn_{lec['id']}", use_container_width=True):
+                        st.session_state.doc_id = lec['id']
+                        st.session_state.current_lecture_title = lec.get('title', '')
+                        st.session_state.transcript = lec.get('transcript', '')
+                        st.session_state.summary_data = lec.get('summary_json', None)
+                        
+                        # 튜터 채팅 내역 리셋
+                        if "messages" in st.session_state:
+                            st.session_state.messages = []
+                        st.rerun()
 
 # ==========================================
 # 메인 화면
 # ==========================================
 col_title, col_btn = st.columns([8, 2])
 with col_title:
-    st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
-    st.markdown("<div class='univ-subtitle'>업로드된 강의의 원본 스크립트와 구조화된 핵심 노트를 확인하세요.</div>", unsafe_allow_html=True)
+    if st.session_state.current_lecture_title:
+        st.markdown(f"<div class='univ-title'>{st.session_state.current_lecture_title}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
+    st.markdown("<div class='univ-subtitle'>사이드바에서 과목을 만들고 새 강의를 업로드하거나 과거 기록을 불러오세요.</div>", unsafe_allow_html=True)
+
 with col_btn:
-    # 초기화(Reset) 버튼
-    if st.button("🔄 새 녹음 분석 (초기화)", use_container_width=True):
+    if st.button("🔄 초기화 화면으로", use_container_width=True):
         st.session_state.transcript = ""
         st.session_state.summary_data = None
+        st.session_state.current_lecture_title = ""
+        st.session_state.doc_id = None
+        if "messages" in st.session_state: st.session_state.messages = []
         st.rerun()
 
 if not st.session_state.transcript:
-    st.info("👈 왼쪽 사이드바에서 음성 파일을 업로드하고 분석을 시작해주세요.")
+    st.info("👈 왼쪽 사이드바에서 [과목]을 선택하고 강의를 업로드하거나 과거 기록을 클릭해주세요.")
 else:
-    tab1, tab2 = st.tabs(["📝 AI 요약 노트", "📜 원본 스크립트"])
+    # 🌟 탭 3개로 확장!
+    tab1, tab2, tab3 = st.tabs(["📝 AI 요약 노트", "📜 원본 스크립트", "💬 AI 튜터에게 질문하기"])
     
     with tab2:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
@@ -223,21 +310,28 @@ else:
                             response_format={"type": "json_object"},
                             temperature=0.0
                         )
-                        st.session_state.summary_data = json.loads(response.choices[0].message.content)
+                        json_result = json.loads(response.choices[0].message.content)
+                        st.session_state.summary_data = json_result
+                        
+                        # 생성된 요약본을 DB에 즉시 업데이트 저장!
+                        if st.session_state.doc_id:
+                            db.collection('lectures').document(st.session_state.doc_id).update({
+                                'summary_json': json_result
+                            })
+                            
                         st.rerun() 
                     except Exception as e:
                         st.error(f"오류가 발생했습니다: {e}")
         else:
             data = st.session_state.summary_data
             
-            # --- PDF 진짜 다운로드 버튼 ---
             col_pdf, col_space = st.columns([3, 7])
             with col_pdf:
                 pdf_bytes = create_pdf(data)
                 st.download_button(
                     label="📥 PDF로 다운로드",
                     data=pdf_bytes,
-                    file_name="강의요약노트.pdf",
+                    file_name=f"{st.session_state.current_lecture_title}_노트.pdf",
                     mime="application/pdf",
                     type="primary",
                     use_container_width=True
@@ -245,16 +339,9 @@ else:
             
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # 1. 전체 요약
             if data.get("executive_summary"):
-                st.markdown(f"""
-                <div class='summary-card'>
-                    <div class='card-title'>Executive Summary</div>
-                    <div class='card-text'>{data.get('executive_summary')}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<div class='summary-card'><div class='card-title'>Executive Summary</div><div class='card-text'>{data.get('executive_summary')}</div></div>", unsafe_allow_html=True)
             
-            # 2. 코넬 노트
             notes = data.get("cornell_notes", [])
             if notes:
                 st.markdown("<div class='summary-card'><div class='card-title'>상세 필기 노트</div>", unsafe_allow_html=True)
@@ -268,10 +355,54 @@ else:
                     st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px dashed #e5e7eb;'>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # 3. Takeaways
             takeaways = data.get("key_takeaways", [])
             if takeaways:
                 st.markdown("<div class='summary-card'><div class='card-title'>핵심 강조 사항 (Takeaways)</div>", unsafe_allow_html=True)
                 for pt in takeaways:
                     st.markdown(f"<div class='highlight-box'>💡 {pt}</div>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- 탭 3: AI 튜터 질문하기 ---
+    with tab3:
+        st.markdown("<h3 style='font-size: 18px; font-weight: 700; color: #1e293b;'>💬 현재 강의 내용에 대해 질문하세요</h3>", unsafe_allow_html=True)
+        st.write("강의 내용 중 이해가 안 가는 부분이나, 핵심 개념을 다시 설명해달라고 요청해보세요.")
+        
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+        if prompt := st.chat_input("질문을 입력하세요... (예: 여기서 말한 1형 당뇨의 원인이 뭐야?)"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                client = Groq(api_key=api_key)
+                
+                # AI 튜터 시스템 프롬프트
+                tutor_prompt = f"""당신은 이 강의의 전담 조교(Tutor)입니다.
+아래 제공된 [강의 원본 텍스트]를 완벽하게 숙지한 상태에서, 학생의 질문에 친절하고 이해하기 쉽게 답변해 주세요.
+만약 강의 내용에 없는 것을 물어본다면, "이 강의에서는 다루지 않은 내용입니다"라고 말한 뒤 알고 있는 외부 지식을 조금만 섞어서 대답하세요.
+
+[강의 원본 텍스트 시작]
+{st.session_state.transcript}
+[강의 원본 텍스트 끝]
+"""
+                api_messages = [{"role": "system", "content": tutor_prompt}]
+                api_messages.extend(st.session_state.messages)
+                
+                try:
+                    response = client.chat.completions.create(
+                        model="openai/gpt-oss-120b",
+                        messages=api_messages,
+                        temperature=0.3
+                    )
+                    full_response = response.choices[0].message.content
+                    message_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.error(f"채팅 오류: {e}")
