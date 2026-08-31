@@ -140,7 +140,7 @@ if st.session_state.transcript:
         with st.spinner("AI 튜터가 노트를 정리하고 있습니다..."):
             try:
                 response = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile", # 128k 컨텍스트 윈도우 지원
+                    model="openai/gpt-oss-120b", # 128k 컨텍스트 윈도우 지원
                     messages=[
                         {"role": "system", "content": summary_prompt},
                         {"role": "user", "content": st.session_state.transcript}
