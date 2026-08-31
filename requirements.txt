@@ -2,3 +2,4 @@ streamlit
 groq
 pydub
 fpdf2
+firebase-admin
