@@ -9,6 +9,7 @@ from fpdf import FPDF
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
+import time
 
 # 페이지 기본 설정
 st.set_page_config(page_title="강의 노트 AI", layout="wide", initial_sidebar_state="expanded")
@@ -192,6 +193,11 @@ with st.sidebar:
                 st.write("해당 과목 폴더를 삭제하시겠습니까?")
                 if st.button("과목 영구 삭제", type="primary", use_container_width=True):
                     db.collection('subjects').document(selected_subject_id).delete()
+                    
+                    # 삭제 완료 알림 띄우기 (UX 개선)
+                    st.toast(f"과목이 성공적으로 삭제되었습니다!", icon="✅")
+                    time.sleep(1) # 알림을 읽을 수 있게 1초 대기
+                    
                     st.session_state.current_subject_id = ""
                     st.session_state.transcript = ""
                     st.session_state.summary_data = None
@@ -203,7 +209,6 @@ with st.sidebar:
             st.markdown("<br><h3 style='font-size: 16px; font-weight: 700;'>🎙️ 새 강의 업로드</h3>", unsafe_allow_html=True)
             lecture_title = st.text_input("강의 제목", placeholder="예: 3주차 심혈관계")
             
-            # 🔥 복구된 전공(프롬프트) 선택 옵션!
             domain_options = {
                 "일반 (기본)": "다음은 한국어 음성 기록입니다. 정확하게 받아쓰기 해주세요.",
                 "간호학 (Nursing)": "간호학 전공 강의입니다. 의학, 질환명, 약물명 전문 용어를 정확하게 받아쓰기 해주세요.",
@@ -288,6 +293,10 @@ with col_btn_2:
     if st.session_state.doc_id:
         if st.button("🗑️ 현재 강의 삭제", use_container_width=True):
             db.collection('lectures').document(st.session_state.doc_id).delete()
+            
+            st.toast("강의가 성공적으로 삭제되었습니다!", icon="✅")
+            time.sleep(1)
+            
             st.session_state.transcript = ""
             st.session_state.summary_data = None
             st.session_state.current_lecture_title = ""
