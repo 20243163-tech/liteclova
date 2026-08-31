@@ -44,7 +44,6 @@ st.markdown("""
 def init_firebase():
     if not firebase_admin._apps:
         try:
-            # st.secrets에 저장된 JSON 텍스트를 딕셔너리로 변환
             key_dict = json.loads(st.secrets["FIREBASE_KEY"])
             cred = credentials.Certificate(key_dict)
             firebase_admin.initialize_app(cred)
@@ -188,6 +187,18 @@ with st.sidebar:
             selected_subject_id = st.selectbox("현재 선택된 과목", list(subjects.keys()), format_func=lambda x: subjects[x])
             st.session_state.current_subject_id = selected_subject_id
             
+            # 🚨 과목 삭제 버튼 (실수 방지를 위해 숨김 처리)
+            with st.expander("🗑️ 현재 과목 삭제"):
+                st.write("해당 과목 폴더를 삭제하시겠습니까?")
+                if st.button("과목 영구 삭제", type="primary", use_container_width=True):
+                    db.collection('subjects').document(selected_subject_id).delete()
+                    st.session_state.current_subject_id = ""
+                    st.session_state.transcript = ""
+                    st.session_state.summary_data = None
+                    st.session_state.current_lecture_title = ""
+                    st.session_state.doc_id = None
+                    st.rerun()
+            
             # --- 신규 녹취 업로드 영역 ---
             st.markdown("<br><h3 style='font-size: 16px; font-weight: 700;'>🎙️ 새 강의 업로드</h3>", unsafe_allow_html=True)
             lecture_title = st.text_input("강의 제목", placeholder="예: 3주차 심혈관계")
@@ -198,7 +209,6 @@ with st.sidebar:
                     with st.spinner("AI가 음성을 듣고 있습니다..."):
                         result_text = process_audio(uploaded_file, api_key, "다음은 전문 강의 음성 기록입니다. 최대한 문맥에 맞게 정확하게 받아쓰기 해주세요.")
                         if result_text:
-                            # DB에 저장!
                             new_doc = db.collection('lectures').add({
                                 'subject_id': selected_subject_id,
                                 'title': lecture_title,
@@ -234,14 +244,12 @@ with st.sidebar:
                 st.write("아직 저장된 강의가 없습니다.")
             else:
                 for lec in lectures_list:
-                    # 버튼을 누르면 과거 기록을 세션에 복원합니다
                     if st.button(f"📄 {lec.get('title', '제목 없음')}", key=f"btn_{lec['id']}", use_container_width=True):
                         st.session_state.doc_id = lec['id']
                         st.session_state.current_lecture_title = lec.get('title', '')
                         st.session_state.transcript = lec.get('transcript', '')
                         st.session_state.summary_data = lec.get('summary_json', None)
                         
-                        # 튜터 채팅 내역 리셋
                         if "messages" in st.session_state:
                             st.session_state.messages = []
                         st.rerun()
@@ -249,7 +257,7 @@ with st.sidebar:
 # ==========================================
 # 메인 화면
 # ==========================================
-col_title, col_btn = st.columns([8, 2])
+col_title, col_btn_1, col_btn_2 = st.columns([6, 2, 2])
 with col_title:
     if st.session_state.current_lecture_title:
         st.markdown(f"<div class='univ-title'>{st.session_state.current_lecture_title}</div>", unsafe_allow_html=True)
@@ -257,8 +265,8 @@ with col_title:
         st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
     st.markdown("<div class='univ-subtitle'>사이드바에서 과목을 만들고 새 강의를 업로드하거나 과거 기록을 불러오세요.</div>", unsafe_allow_html=True)
 
-with col_btn:
-    if st.button("🔄 초기화 화면으로", use_container_width=True):
+with col_btn_1:
+    if st.button("🔄 화면 초기화", use_container_width=True):
         st.session_state.transcript = ""
         st.session_state.summary_data = None
         st.session_state.current_lecture_title = ""
@@ -266,10 +274,21 @@ with col_btn:
         if "messages" in st.session_state: st.session_state.messages = []
         st.rerun()
 
+with col_btn_2:
+    # 🚨 현재 강의 기록 삭제 버튼 추가
+    if st.session_state.doc_id:
+        if st.button("🗑️ 현재 강의 삭제", use_container_width=True):
+            db.collection('lectures').document(st.session_state.doc_id).delete()
+            st.session_state.transcript = ""
+            st.session_state.summary_data = None
+            st.session_state.current_lecture_title = ""
+            st.session_state.doc_id = None
+            if "messages" in st.session_state: st.session_state.messages = []
+            st.rerun()
+
 if not st.session_state.transcript:
     st.info("👈 왼쪽 사이드바에서 [과목]을 선택하고 강의를 업로드하거나 과거 기록을 클릭해주세요.")
 else:
-    # 🌟 탭 3개로 확장!
     tab1, tab2, tab3 = st.tabs(["📝 AI 요약 노트", "📜 원본 스크립트", "💬 AI 튜터에게 질문하기"])
     
     with tab2:
@@ -313,7 +332,6 @@ else:
                         json_result = json.loads(response.choices[0].message.content)
                         st.session_state.summary_data = json_result
                         
-                        # 생성된 요약본을 DB에 즉시 업데이트 저장!
                         if st.session_state.doc_id:
                             db.collection('lectures').document(st.session_state.doc_id).update({
                                 'summary_json': json_result
@@ -383,7 +401,6 @@ else:
                 message_placeholder = st.empty()
                 client = Groq(api_key=api_key)
                 
-                # AI 튜터 시스템 프롬프트
                 tutor_prompt = f"""당신은 이 강의의 전담 조교(Tutor)입니다.
 아래 제공된 [강의 원본 텍스트]를 완벽하게 숙지한 상태에서, 학생의 질문에 친절하고 이해하기 쉽게 답변해 주세요.
 만약 강의 내용에 없는 것을 물어본다면, "이 강의에서는 다루지 않은 내용입니다"라고 말한 뒤 알고 있는 외부 지식을 조금만 섞어서 대답하세요.
