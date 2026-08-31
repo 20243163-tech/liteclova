@@ -8,27 +8,25 @@ import json
 # 페이지 기본 설정 (와이드 모드, 사이드바 활용)
 st.set_page_config(page_title="강의 노트 AI", layout="wide", initial_sidebar_state="expanded")
 
-# --- 커스텀 CSS (Univ AI 스타일: Pretendard 폰트, 탭 디자인, 카드 레이아웃) ---
+# --- 커스텀 CSS (카드 디자인 입체감 극대화) ---
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     
-    /* 전체 폰트 적용 및 배경색 */
     html, body, [class*="css"] {
         font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif !important;
     }
     
-    .stApp {
-        background-color: #f5f7fa;
+    /* 🚨 배경색 강제 지정 (카드와 확실히 대비되도록 연회색 적용) */
+    .stApp, .main {
+        background-color: #f1f5f9 !important;
     }
 
-    /* 사이드바 스타일링 */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e5e7eb;
     }
     
-    /* 메인 타이틀 */
     .univ-title {
         font-size: 32px;
         font-weight: 800;
@@ -42,36 +40,32 @@ st.markdown("""
         margin-bottom: 40px;
     }
     
-    /* 탭(Tabs) 디자인 커스텀 */
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
         border-bottom: 2px solid #e5e7eb;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        padding-top: 10px;
-        padding-bottom: 10px;
         font-size: 16px;
         font-weight: 600;
         color: #6b7280;
         border: none;
     }
     .stTabs [aria-selected="true"] {
-        color: #6366f1 !important; /* 세련된 인디고/보라색 포인트 */
+        color: #6366f1 !important;
         border-bottom: 3px solid #6366f1 !important;
     }
 
-    /* 요약 카드 디자인 */
+    /* 🚨 요약 카드 뚜렷하게 (흰색 배경 + 입체감 있는 그림자) */
     .summary-card {
-        background: white;
+        background-color: #ffffff !important;
         border-radius: 16px;
-        padding: 28px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-        margin-bottom: 24px;
-        border: 1px solid #f3f4f6;
+        padding: 32px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        margin-bottom: 30px;
+        border: 1px solid #e2e8f0;
     }
     
-    /* 카드 내 제목 */
     .card-title {
         font-size: 18px;
         font-weight: 700;
@@ -90,14 +84,12 @@ st.markdown("""
         border-radius: 2px;
     }
 
-    /* 본문 텍스트 */
     .card-text {
         font-size: 15px;
         color: #374151;
         line-height: 1.7;
     }
 
-    /* 코넬 키워드 (좌측) */
     .keyword-badge {
         background: #eef2ff;
         color: #4f46e5;
@@ -109,7 +101,6 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* 코넬 디테일 리스트 */
     .detail-list {
         list-style-type: none;
         padding-left: 0;
@@ -130,7 +121,6 @@ st.markdown("""
         color: #9ca3af;
     }
 
-    /* 강조 포인트 박스 */
     .highlight-box {
         background: #fdf2f8;
         border: 1px solid #fce7f3;
@@ -153,7 +143,7 @@ if "transcript" not in st.session_state:
 if "summary_data" not in st.session_state:
     st.session_state.summary_data = None
 
-# API Key 로직 (비밀리에 처리)
+# API Key 로직
 api_key = ""
 if "GROQ_API_KEY" in st.secrets:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -199,15 +189,11 @@ def process_audio(file, api_key, prompt_text):
     os.remove(temp_audio_path)
     return full_transcript
 
-# ==========================================
-# 사이드바 (Sidebar) - 컨트롤 패널
-# ==========================================
+# 사이드바
 with st.sidebar:
     st.markdown("<h2 style='font-size: 20px; font-weight: 800; color: #111827;'>⚙️ 프로젝트 설정</h2>", unsafe_allow_html=True)
-    
     if not api_key:
         api_key = st.text_input("Groq API Key (필수)", type="password")
-        
     domain_options = {
         "일반 (기본)": "다음은 한국어 음성 기록입니다. 정확하게 받아쓰기 해주세요.",
         "간호학 (Nursing)": "간호학 전공 강의입니다. 의학, 질환명, 약물명 전문 용어를 정확하게 받아쓰기 해주세요.",
@@ -215,7 +201,6 @@ with st.sidebar:
     }
     domain_choice = st.selectbox("전공 도메인", list(domain_options.keys()))
     system_prompt_stt = domain_options[domain_choice]
-    
     st.markdown("<br>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader("새 오디오 업로드", type=["mp3", "m4a", "wav"])
     
@@ -225,28 +210,23 @@ with st.sidebar:
                 result_text = process_audio(uploaded_file, api_key, system_prompt_stt)
                 if result_text:
                     st.session_state.transcript = result_text
-                    st.session_state.summary_data = None # 새로운 파일이면 요약 초기화
+                    st.session_state.summary_data = None 
 
-# ==========================================
-# 메인 화면 (Main Area)
-# ==========================================
+# 메인 화면
 st.markdown("<div class='univ-title'>강의 노트 AI 공간</div>", unsafe_allow_html=True)
 st.markdown("<div class='univ-subtitle'>업로드된 강의의 원본 스크립트를 확인하고 AI가 구조화한 핵심 노트를 학습하세요.</div>", unsafe_allow_html=True)
 
 if not st.session_state.transcript:
     st.info("👈 왼쪽 메뉴에서 강의 음성 파일을 업로드하고 분석을 시작해주세요.")
 else:
-    # 탭(Tabs)을 사용해 화면을 깔끔하게 분리
     tab1, tab2 = st.tabs(["📝 AI 요약 노트", "📜 원본 스크립트"])
     
-    # --- 탭 2: 원본 스크립트 ---
     with tab2:
         st.markdown("<div class='summary-card'>", unsafe_allow_html=True)
         st.text_area("전사 텍스트", st.session_state.transcript, height=500, label_visibility="collapsed")
         st.markdown("</div>", unsafe_allow_html=True)
         st.download_button("텍스트 파일 다운로드", data=st.session_state.transcript, file_name="script.txt", mime="text/plain")
 
-    # --- 탭 1: AI 요약 노트 ---
     with tab1:
         if not st.session_state.summary_data:
             st.markdown("<div style='text-align: center; padding: 50px 0;'><p style='color: #6b7280;'>아직 요약된 노트가 없습니다.</p></div>", unsafe_allow_html=True)
@@ -280,13 +260,29 @@ else:
                             temperature=0.0
                         )
                         st.session_state.summary_data = json.loads(response.choices[0].message.content)
-                        st.rerun() # 화면 새로고침
+                        st.rerun() 
                     except Exception as e:
                         st.error(f"오류가 발생했습니다: {e}")
         else:
-            # 생성된 요약 데이터 렌더링
             data = st.session_state.summary_data
             
+            # --- 다운로드 / 인쇄 안내 버튼부 ---
+            col_a, col_b = st.columns([8, 2])
+            with col_a:
+                st.info("💡 **PDF로 저장하는 꿀팁:** 키보드의 `Ctrl + P` (맥은 `Cmd + P`)를 눌러 'PDF로 저장'을 선택하시면 현재의 예쁜 디자인 그대로 저장됩니다!")
+            with col_b:
+                # 마크다운 텍스트 생성
+                md_text = f"# 강의 노트\n\n## 🎯 Executive Summary\n{data.get('executive_summary', '')}\n\n## 📚 상세 필기 노트\n"
+                for note in data.get("cornell_notes", []):
+                    md_text += f"\n### {note.get('keyword', '')}\n"
+                    for d in note.get("details", []):
+                        md_text += f"- {d}\n"
+                md_text += "\n## 🚨 주요 강조 포인트\n"
+                for pt in data.get("key_takeaways", []):
+                    md_text += f"- {pt}\n"
+                
+                st.download_button("📄 텍스트 복사본 다운로드", data=md_text, file_name="ai_notes.md", mime="text/markdown", use_container_width=True)
+
             # 1. 전체 요약
             if data.get("executive_summary"):
                 st.markdown(f"""
@@ -296,7 +292,7 @@ else:
                 </div>
                 """, unsafe_allow_html=True)
             
-            # 2. 코넬 노트 (2단 컬럼 디자인)
+            # 2. 코넬 노트 
             notes = data.get("cornell_notes", [])
             if notes:
                 st.markdown("<div class='summary-card'><div class='card-title'>상세 필기 노트</div>", unsafe_allow_html=True)
@@ -317,7 +313,3 @@ else:
                 for pt in takeaways:
                     st.markdown(f"<div class='highlight-box'>💡 {pt}</div>", unsafe_allow_html=True)
                 st.markdown("</div>", unsafe_allow_html=True)
-                
-            if st.button("노트 다시 생성하기"):
-                st.session_state.summary_data = None
-                st.rerun()
