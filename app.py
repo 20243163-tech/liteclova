@@ -114,44 +114,40 @@ if st.session_state.transcript:
     if st.button("✨ 요약 노트 만들기 (약 10초 소요)"):
         client = Groq(api_key=api_key)
         
-        # 엄격하게 통제된 요약 특화 프롬프트
-        summary_prompt = """당신은 뛰어난 요약 능력을 가진 대학생들의 학습 튜터입니다.
+        # 압도적인 분량과 디테일을 뽑아내도록 개조된 프롬프트
+        summary_prompt = """당신은 뛰어난 강의 분석 능력을 가진 대학생들의 수석 학습 튜터입니다.
 [엄격한 지시사항]
-1. 오직 아래에 제공된 <강의 녹취록>의 내용만을 바탕으로 요약해야 합니다. 절대 외부 지식으로 내용을 지어내지 마세요(Hallucination 금지).
-2. 녹취록 내용이 부실하다면 억지로 채우지 말고 있는 사실만 요약하세요.
-3. 코넬 노트 필기 방식에 맞춰, 중요한 '핵심 키워드(대주제)'를 뽑고 그에 대한 '상세 설명(소주제)'을 계층적으로 정리하세요.
-4. 반드시 아래의 JSON 형식으로만 답변을 출력하세요.
+1. 오직 아래에 제공된 <강의 녹취록>의 내용만을 바탕으로 정리해야 합니다. (Hallucination 엄격히 금지)
+2. 단, '짧은 요약'이 아니라 '완벽한 필기 대행'이 목적입니다. 이 강의를 전혀 듣지 않은 학생이 이 노트만 보고도 중간고사를 만점 받을 수 있을 정도로, 녹취록에 등장하는 모든 개념의 정의, 인과관계, 예시, 수치 등을 하나도 빠짐없이 '최대한 구체적이고 길고 상세하게' 모두 기록하세요.
+3. 듬성듬성 건너뛰지 말고, 교수님의 설명 논리 흐름을 그대로 따라가며 촘촘하게 노트를 작성하세요.
+4. 코넬 노트 필기 방식에 맞춰, 중요한 '핵심 키워드(대주제)'를 뽑고 그에 대한 '상세 설명(소주제)'을 계층적으로 정리하세요.
+5. 반드시 아래의 JSON 형식으로만 답변을 출력하세요.
 
 {
-  "executive_summary": "강의 전체 내용을 꿰뚫는 핵심 2~3문장 요약",
+  "executive_summary": "강의 전체 내용을 꿰뚫는 핵심 2~3문장",
   "cornell_notes": [
     {
       "keyword": "핵심 개념어 또는 대주제 1",
       "details": [
-        "해당 키워드에 대한 상세 설명 1",
-        "상세 설명 2 (예시 등)"
-      ]
-    },
-    {
-      "keyword": "핵심 개념어 또는 대주제 2",
-      "details": [
-        "상세 설명 1"
+        "해당 키워드에 대한 아주 상세하고 구체적인 설명 (개념, 정의 등)",
+        "교수님이 든 구체적인 예시나 비유",
+        "관련된 원인과 결과, 중요한 수치 데이터 등 상세 내용 모음"
       ]
     }
   ],
-  "key_takeaways": ["교수님이 특별히 강조한 포인트나 시험 출제 예상 포인트 1 (없으면 생략)", "포인트 2"]
+  "key_takeaways": ["교수님이 특별히 강조한 포인트 1", "포인트 2"]
 }"""
 
-        with st.spinner("가장 완벽한 형태로 강의를 요약하고 있습니다..."):
+        with st.spinner("수업을 안 들어도 될 만큼 아주 상세한 노트를 작성 중입니다..."):
             try:
                 response = client.chat.completions.create(
-                    model="openai/gpt-oss-120b", # 최신 주력 모델 사용
+                    model="openai/gpt-oss-120b", 
                     messages=[
                         {"role": "system", "content": summary_prompt},
                         {"role": "user", "content": f"<강의 녹취록>\n{st.session_state.transcript}\n</강의 녹취록>"}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.0 # 상상력 차단, 팩트 기반 요약 
+                    temperature=0.0
                 )
                 
                 # JSON 파싱
@@ -164,21 +160,20 @@ if st.session_state.transcript:
                 st.info(summary_data.get("executive_summary", "요약 내용이 없습니다."))
                 
                 # 2. 코넬 노트 (상세 요약)
-                st.markdown("### 📚 상세 필기 노트 (코넬식)")
+                st.markdown("### 📚 초상세 필기 노트 (코넬식)")
                 notes = summary_data.get("cornell_notes", [])
                 
                 if not notes:
-                    st.write("상세 요약을 추출할 내용이 부족합니다.")
+                    st.write("상세 필기를 추출할 내용이 부족합니다.")
                 else:
-                    # Streamlit columns를 활용해 코넬 노트의 느낌(좌/우)을 살림
                     for note in notes:
-                        col1, col2 = st.columns([1, 3]) # 1:3 비율 (키워드 : 내용)
+                        col1, col2 = st.columns([1, 3])
                         with col1:
                             st.markdown(f"**{note.get('keyword', '')}**")
                         with col2:
                             for detail in note.get("details", []):
                                 st.markdown(f"- {detail}")
-                        st.divider() # 구분선
+                        st.divider()
                 
                 # 3. 핵심 강조 포인트 (Takeaways)
                 takeaways = summary_data.get("key_takeaways", [])
@@ -187,7 +182,7 @@ if st.session_state.transcript:
                     for pt in takeaways:
                         st.error(f"📌 {pt}")
                 
-                st.success("요약 노트 생성이 완료되었습니다!")
+                st.success("초상세 요약 노트 생성이 완료되었습니다!")
                 
             except Exception as e:
                 st.error(f"요약 중 오류가 발생했습니다: {e}")
