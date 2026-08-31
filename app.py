@@ -4,13 +4,11 @@ from pydub import AudioSegment
 import os
 import tempfile
 import json
-import csv
-import io
 
 # 페이지 설정
 st.set_page_config(page_title="나만의 AI 녹취록", page_icon="🎙️")
-st.title("🎙️ 초고속 AI 녹취 및 요약 (Groq Whisper & Llama3)")
-st.write("1시간 이상의 강의 파일도 텍스트로 변환하고, 코넬 노트형 학습 자료로 자동 요약해 줍니다.")
+st.title("🎙️ 초고속 AI 녹취 및 코넬식 요약")
+st.write("강의 음성을 텍스트로 변환하고, 가장 효율적인 학습 포맷인 '코넬 노트' 형식으로 완벽하게 요약합니다.")
 
 # Session state 초기화
 if "transcript" not in st.session_state:
@@ -29,7 +27,7 @@ else:
 # 전공 분야 선택 (프롬프트 튜닝용)
 domain_options = {
     "일반 (기본)": "다음은 한국어 음성 기록입니다. 최대한 정확하게 받아쓰기 해주세요.",
-    "간호학 (Nursing)": "다음은 간호학 전공 강의 음성 기록입니다. 의학 및 간호학 전문 용어, 해부학 용어, 질환명, 약물명, 병태생리 관련 영어 및 한국어 용어를 문맥에 맞게 정확하게 받아쓰기 해주세요.",
+    "간호학 (Nursing)": "다음은 간호학 전공 강의 음성 기록입니다. 의학 및 간호학 전문 용어, 해부학 용어, 질환명, 약물명, 병태생리 관련 영단어 및 한국어 용어를 문맥에 맞게 정확하게 받아쓰기 해주세요.",
     "기독교 (Theology/Christianity)": "다음은 기독교 및 신학 강의 음성 기록입니다. 성경 인물, 지명, 신학 용어, 교리, 역사적 배경과 관련된 전문 용어를 문맥에 맞게 정확하게 받아쓰기 해주세요."
 }
 domain_choice = st.selectbox("📚 강의 전공 분야 선택 (인식률 향상)", list(domain_options.keys()))
@@ -104,49 +102,56 @@ if uploaded_file and api_key:
 if st.session_state.transcript:
     st.text_area("녹취 결과 (원본 텍스트)", st.session_state.transcript, height=200)
     st.download_button(
-        label="📄 텍스트 파일로 다운로드",
+        label="📄 원본 텍스트 다운로드",
         data=st.session_state.transcript,
         file_name="transcript.txt",
         mime="text/plain"
     )
     
     st.divider()
-    st.subheader("📝 학습용 강의 노트 자동 생성")
-    st.write("음성 인식 오류를 AI가 문맥에 맞게 자체 교정하여 완벽한 구조의 요약본을 만듭니다.")
+    st.subheader("📝 코넬식 강의 노트 자동 생성")
     
-    if st.button("✨ 강의 노트 만들기 (약 10~20초 소요)"):
+    if st.button("✨ 요약 노트 만들기 (약 10초 소요)"):
         client = Groq(api_key=api_key)
         
-        # LLM 프롬프트 설계 (에러 보정 및 JSON 구조 강제)
-        summary_prompt = """당신은 대학생들의 훌륭한 학습 튜터입니다.
-제공되는 텍스트는 AI가 음성을 인식한 녹취록이므로 오타나 문맥이 어색한 부분(STT 오류)이 있을 수 있습니다. 당신이 가진 전공 지식을 동원해 문맥을 파악하고 오류를 교정하여 완벽한 학습용 요약본을 만들어야 합니다.
-반드시 아래의 JSON 형식으로만 답변을 출력하세요. 마크다운 기호나 다른 설명은 절대 추가하지 말고 오직 JSON만 출력하세요.
+        # 엄격하게 통제된 요약 특화 프롬프트
+        summary_prompt = """당신은 뛰어난 요약 능력을 가진 대학생들의 학습 튜터입니다.
+[엄격한 지시사항]
+1. 오직 아래에 제공된 <강의 녹취록>의 내용만을 바탕으로 요약해야 합니다. 절대 외부 지식으로 내용을 지어내지 마세요(Hallucination 금지).
+2. 녹취록 내용이 부실하다면 억지로 채우지 말고 있는 사실만 요약하세요.
+3. 코넬 노트 필기 방식에 맞춰, 중요한 '핵심 키워드(대주제)'를 뽑고 그에 대한 '상세 설명(소주제)'을 계층적으로 정리하세요.
+4. 반드시 아래의 JSON 형식으로만 답변을 출력하세요.
 
 {
-  "one_line_summary": "강의 전체를 관통하는 핵심 1줄 요약",
-  "exam_points": ["교수님이 강조한 포인트나 시험 출제가 예상되는 문장 1", "포인트 2 (없으면 빈 배열)"],
-  "flow_summary": [
-    {"topic": "강의 대주제 1", "details": ["세부 내용 1", "세부 내용 2"]},
-    {"topic": "강의 대주제 2", "details": ["세부 내용 1", "세부 내용 2"]}
+  "executive_summary": "강의 전체 내용을 꿰뚫는 핵심 2~3문장 요약",
+  "cornell_notes": [
+    {
+      "keyword": "핵심 개념어 또는 대주제 1",
+      "details": [
+        "해당 키워드에 대한 상세 설명 1",
+        "상세 설명 2 (예시 등)"
+      ]
+    },
+    {
+      "keyword": "핵심 개념어 또는 대주제 2",
+      "details": [
+        "상세 설명 1"
+      ]
+    }
   ],
-  "expected_questions": [
-    {"question": "핵심 개념을 묻는 객관식 또는 단답형 질문 1", "answer": "모범 답안"}
-  ],
-  "glossary": [
-    {"word": "어려운 전공 용어나 핵심 단어 1", "meaning": "해당 단어의 정확한 뜻", "example": "강의에서 사용된 맥락이나 예시"}
-  ]
+  "key_takeaways": ["교수님이 특별히 강조한 포인트나 시험 출제 예상 포인트 1 (없으면 생략)", "포인트 2"]
 }"""
 
-        with st.spinner("AI 튜터가 노트를 정리하고 있습니다..."):
+        with st.spinner("가장 완벽한 형태로 강의를 요약하고 있습니다..."):
             try:
                 response = client.chat.completions.create(
-                    model="openai/gpt-oss-120b", # 128k 컨텍스트 윈도우 지원
+                    model="openai/gpt-oss-120b", # 최신 주력 모델 사용
                     messages=[
                         {"role": "system", "content": summary_prompt},
-                        {"role": "user", "content": st.session_state.transcript}
+                        {"role": "user", "content": f"<강의 녹취록>\n{st.session_state.transcript}\n</강의 녹취록>"}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.3
+                    temperature=0.0 # 상상력 차단, 팩트 기반 요약 
                 )
                 
                 # JSON 파싱
@@ -154,53 +159,35 @@ if st.session_state.transcript:
                 
                 # --- 화면 출력부 (렌더링) ---
                 
-                # 1. 1줄 요약
-                st.header("🎯 1줄 핵심 요약")
-                st.info(summary_data.get("one_line_summary", "내용 없음"))
+                # 1. 전체 요약 (Executive Summary)
+                st.markdown("### 🎯 강의 전체 요약")
+                st.info(summary_data.get("executive_summary", "요약 내용이 없습니다."))
                 
-                # 2. 강조 포인트
-                exam_points = summary_data.get("exam_points", [])
-                if exam_points:
-                    st.header("🚨 교수님 강조 포인트 (시험 주의!)")
-                    for pt in exam_points:
-                        st.error(f"✔️ {pt}")
+                # 2. 코넬 노트 (상세 요약)
+                st.markdown("### 📚 상세 필기 노트 (코넬식)")
+                notes = summary_data.get("cornell_notes", [])
                 
-                # 3. 상세 요약 (흐름별)
-                st.header("📚 강의 흐름별 요약")
-                for section in summary_data.get("flow_summary", []):
-                    st.markdown(f"### 📌 {section.get('topic')}")
-                    for detail in section.get("details", []):
-                        st.markdown(f"- {detail}")
+                if not notes:
+                    st.write("상세 요약을 추출할 내용이 부족합니다.")
+                else:
+                    # Streamlit columns를 활용해 코넬 노트의 느낌(좌/우)을 살림
+                    for note in notes:
+                        col1, col2 = st.columns([1, 3]) # 1:3 비율 (키워드 : 내용)
+                        with col1:
+                            st.markdown(f"**{note.get('keyword', '')}**")
+                        with col2:
+                            for detail in note.get("details", []):
+                                st.markdown(f"- {detail}")
+                        st.divider() # 구분선
                 
-                # 4. 예상 질문 (코넬 노트형)
-                st.header("❓ 코넬 노트형 셀프 테스트")
-                for qna in summary_data.get("expected_questions", []):
-                    with st.expander(f"Q. {qna.get('question')}"):
-                        st.write(f"**A.** {qna.get('answer')}")
-                        
-                # 5. 용어 사전 및 CSV 추출
-                st.header("📖 핵심 용어 사전")
-                glossary = summary_data.get("glossary", [])
+                # 3. 핵심 강조 포인트 (Takeaways)
+                takeaways = summary_data.get("key_takeaways", [])
+                if takeaways:
+                    st.markdown("### 🚨 교수님 강조 포인트 (Takeaways)")
+                    for pt in takeaways:
+                        st.error(f"📌 {pt}")
                 
-                if glossary:
-                    # 표 형태로 렌더링하기 위한 데이터 가공
-                    st.table(glossary)
-                    
-                    # CSV 만들기
-                    output = io.StringIO()
-                    writer = csv.writer(output)
-                    writer.writerow(["단어", "뜻", "예문"])
-                    for item in glossary:
-                        writer.writerow([item.get("word"), item.get("meaning"), item.get("example")])
-                    
-                    st.download_button(
-                        label="💾 플래시카드용 CSV 다운로드 (Anki, Quizlet 호환)",
-                        data=output.getvalue().encode('utf-8-sig'), # 한글 깨짐 방지용 utf-8-sig
-                        file_name="glossary.csv",
-                        mime="text/csv"
-                    )
-                
-                st.success("학습용 강의 노트 생성이 완료되었습니다!")
+                st.success("요약 노트 생성이 완료되었습니다!")
                 
             except Exception as e:
                 st.error(f"요약 중 오류가 발생했습니다: {e}")
